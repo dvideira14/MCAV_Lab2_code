@@ -1,0 +1,26 @@
+function R = rot3D(ang,axis)
+% R = rot3D(ang,axis)
+% define simple 3-D rotations about one axis,
+% assuming the typical rotations needed to go from 
+% Body to inertial frame
+% 
+% ang: angle
+% axis: 1 -> x ; 2 -> y ; 3 -> z
+    
+    if axis == 1 % x-axis
+        R = [    1    ,    0            ,     0
+                0    ,    cos(ang)    ,    -sin(ang)
+                0    ,    sin(ang)    ,     cos(ang)    ];
+    elseif axis == 2 % y-axis
+        R = [    cos(ang)    ,    0    ,    sin(ang)
+                0            ,    1    ,    0
+                -sin(ang)    ,    0    ,    cos(ang)    ];
+    elseif axis == 3 % z-axis
+        R = [    cos(ang)    ,    -sin(ang)    ,    0
+                sin(ang)    ,     cos(ang)    ,    0
+                0            ,     0                ,    1    ];
+    else
+        error('axis is wrong.')
+    end
+
+end

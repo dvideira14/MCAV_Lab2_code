@@ -1,0 +1,152 @@
+%Parametros
+
+g_mars = 3.73;
+Cd = 1.6;
+ro_mars=0.02;
+
+xr = 2.7;
+yr = 3;
+zr = 2.2;
+mr = 1025;
+
+jr = [(1/12)*mr*(yr^2+zr^2) 0 0
+      0 (1/12)*mr*(xr^2+zr^2) 0
+      0 0 (1/12)*mr*(yr^2+xr^2)];
+
+xl=3.66;
+yl=3.07;
+zl = 1.83;
+ml = 1182,6;
+
+jl = [(1/12)*ml*(yl^2+zl^2) 0 0
+      0 (1/12)*ml*(xl^2+zl^2) 0
+      0 0 (1/12)*ml*(yl^2+xl^2)];
+
+m = mr+ml;
+
+cmz = (zr*mr+zl*ml)/m;
+
+z = cmz-2.2;
+
+J = [jl(1,1)+ml*(1.5-z)^2+jr(1,1)+mr*(cmz-1.1)^2 0 0
+     0 jl(2,2)+ml*(1.5-z)^2+jr(2,2)+mr*(cmz-1.1)^2 0
+     0 0 jl(3,3)+jr(3,3)];
+
+%Forças de propulsão e momentos associados(T=2667)
+
+f1 = [0;2667*sin(deg2rad(180-5));2667*cos(deg2rad(180-5))];
+p1 = [1.83;-1.83;-0.198];
+n1 = cross(p1,f1);
+
+f2 = [0;2667*sin(deg2rad(180-10));2667*cos(deg2rad(180-10))];
+p2 = [1.83;1.83;-0.198];
+n2 = cross(p2,f2);
+
+f3 = [0;2667*sin(deg2rad(180+10));2667*cos(deg2rad(180+10))];
+p3 = [-1.83;-1.83;-0.198];
+n3 = cross(p3,f3);
+
+f4 = [0;2667*sin(deg2rad(180+5));2667*cos(deg2rad(180+5))];
+p4 = [-1.83;1.83;-0.198];
+n4 = cross(p4,f4);
+
+zI=[0;0;1];
+Dt=0.01;
+t=0:Dt:60;
+Nsim=length(t);
+x0=[0;0;-2100;zeros(2,1);83.3;zeros(6,1)];
+u1=ones(Nsim,1)*[0.25*m*g_mars,0.25*m*g_mars,0.25*m*g_mars,0.25*m*g_mars];
+
+%linearização
+
+wx = 0;  %Condições do equilíbrio
+wy = 0;
+wz = 0;
+omega_eq = [wx;wy;wz]; 
+v_eq = [0;0;83.3];
+phi = 0;
+theta = 0;
+psi = 0;
+lambda_eq = deg2rad([phi;theta;psi]);
+fa_dot=Cd*ro_mars*xr*yr*v_eq(3)/m;
+
+C=[eye(3) zeros(3) zeros(3) zeros(3)
+   zeros(1,3) zI.' zeros(1,3) zeros(1,3)];
+
+B=[zeros(3,4)
+   1/m*f1 1/m*f2 1/m*f3 1/m*f4
+   zeros(3,4)
+   J^-1*n1 J^-1*n2 J^-1*n3 J^-1*n4];
+
+a = [cos(phi)*tan(theta)*(wy+wz), -wy*sin(phi)-wz*cos(phi), (wy*cos(phi)-wz*sin(phi))/cos(theta)
+    (sin(phi)/(cos(theta))^2)*(wy+wz), 0, (wy*sin(phi)*sin(theta)+wz*cos(phi)*sin(theta))/(cos(theta)^2)
+    0 0 0];
+
+A=[zeros(3) Euler2R(lambda_eq) skew(v_eq) zeros(3)
+    zeros(3) skew(-omega_eq)-[zeros(2,3);0 0 -fa_dot] skew([0;0;-g_mars]) skew(v_eq)
+    zeros(3) zeros(3) a Euler2Q(lambda_eq)
+    zeros(3) zeros(3) zeros(3) zeros(3)];
+
+D=zeros(4);
+
+sys = ss(A,B,C,D);
+
+yli=lsim(sys,u1,t,x0);
+
+figure(1);
+plot(t,yli(:,1),'k',t,yli(:,2),'r',t,yli(:,3),'g',t,yli(:,4),'b');
+legend('p_x','p_y','p_z','v_z')
+grid on;
+
+%Controlabilidade, observabilidade e estabilidade
+
+[V,DL,W] = eig(A);
+J1 = jordan(A);
+mode_obs = C*V;
+mode_ctrl = W.'*B;
+
+G = tf(sys);
+figure(2);
+sigmaplot(G);
+grid on;
+
+A0 = A;
+B2 = B;
+B1 = zeros(12);
+B0 = [B1 B2];
+W1 = 100*diag([0.01;0.01;10;0;0;100;zeros(6,1)]);
+W2 = 0.1*eye(4);
+C1 = [W1;zeros(4,12)];
+C2 = -eye(12);
+C0 = [C1;C2];
+D11 = zeros(16,12);
+D12 = [zeros(12,4);W2];
+D22 = zeros(12,4);
+D21 = eye(12);
+D0 = [D11 D12;D21 D22];
+P = ss(A0,B0,C0,D0);
+nmeas = 12;
+ncont = 4;
+
+[K,CL,gamma,info] = hinfsyn(P,nmeas,ncont);
+
+%%
+
+x = zeros(12,Nsim);
+x(:,1) = x0;
+r = [0*(t>=0);0*(t>=0);x(3)+v_eq(3)*t.*(t>=0);
+    v_eq*(t>=0);lambda_eq*(t>=0);omega_eq*(t>=0)];
+u = zeros(4,Nsim);
+
+for k = 1:Nsim
+
+    v = r(:,k)-x(:,k);
+    u(:,k) = -K.C*v;
+
+    x_dot = A*x(:,k) + B*u(:,k);
+    xp = x(:,k) + Dt*x_dot;
+    if k < Nsim
+        x(:,k+1) = xp;
+    end
+    
+end
